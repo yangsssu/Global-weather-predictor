@@ -1,0 +1,31 @@
+{
+  "name": "global-weather-predictor",
+  "version": "1.0.0",
+  "description": "基于 React 和 Leaflet 的全球天气可视化预测工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "author": "Yang Su",
+  "license": "MIT",
+  "build": {
+    "appId": "com.weather.predictor",
+    "productName": "全球气象监测",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "icon.ico" 
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  }
+}

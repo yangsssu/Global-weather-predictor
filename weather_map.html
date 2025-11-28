@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Weather Predictor</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; width: 100%; background-color: #000; overflow: hidden; }
+        #root { height: 100%; width: 100%; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+        /* Leaflet Customization */
+        .leaflet-container { background: #000 !important; font-family: 'Segoe UI', sans-serif; height: 100%; width: 100%; }
+        .leaflet-popup-content-wrapper { background: rgba(15, 23, 42, 0.9); color: #fff; border: 1px solid #38bdf8; border-radius: 4px; }
+        .leaflet-popup-tip { background: #38bdf8; }
+        
+        /* THE DARK MODE TRICK: Invert standard map tiles */
+        .dark-mode-tiles .leaflet-tile {
+            filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+
+        /* Neon Glow Effects */
+        .neon-text { text-shadow: 0 0 5px rgba(56, 189, 248, 0.5); }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Marker Pulse Animation */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.33); }
+            80%, 100% { opacity: 0; }
+        }
+        .marker-pin {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #38bdf8;
+            position: relative;
+            box-shadow: 0 0 10px #38bdf8;
+        }
+        .marker-pin::after {
+            content: '';
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #38bdf8;
+            position: absolute;
+            top: 0;
+            left: 0;
+            animation: pulse-ring 1.25s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+            opacity: 0.6;
+            transform: scale(2.5);
+        }
+
+        /* Select Dropdown Styling */
+        select option {
+            background-color: #0f172a;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // --- Translation Data ---
+        const LANGUAGES = {
+            zh: "中文",
+            en: "English",
+            ja: "日本語",
+            ko: "한국어",
+            fr: "Français",
+            it: "Italiano",
+            de: "Deutsch"
+        };
+
+        const TRANSLATIONS = {
+            zh: {
+                title: "地球天气预测",
+                subtitle: "点击地图任意位置查看天气",
+                lat: "纬度",
+                lng: "经度",
+                rain24h: "降雨概率 (24h)",
+                forecast_short: "短时预测 (+3h)",
+                forecast_7d: "未来 7 天预报",
+                loading: "正在连接卫星数据...",
+                error: "无法获取该地点数据",
+                click_prompt: "请在地图上点击",
+                max_rain_prob: "最大降水概率",
+                temp_range: "气温范围"
+            },
+            en: {
+                title: "Earth Weather",
+                subtitle: "Click anywhere on the map",
+                lat: "LAT",
+                lng: "LNG",
+                rain24h: "Rain Chance (24h)",
+                forecast_short: "Short Term (+3h)",
+                forecast_7d: "7-Day Forecast",
+                loading: "Fetching satellite data...",
+                error: "Data unavailable for this location",
+                click_prompt: "Click map to start",
+                max_rain_prob: "Max Precip Prob",
+                temp_range: "Temp Range"
+            },
+            ja: {
+                title: "地球天気予報",
+                subtitle: "地図をクリックして天気を確認",
+                lat: "緯度",
+                lng: "経度",
+                rain24h: "降水確率 (24h)",
+                forecast_short: "短期予報 (+3h)",
+                forecast_7d: "週間天気予報 (7日間)",
+                loading: "衛星データ受信中...",
+                error: "データ取得失敗",
+                click_prompt: "地図をクリックしてください",
+                max_rain_prob: "最大降水確率",
+                temp_range: "気温範囲"
+            },
+            ko: {
+                title: "지구 날씨 예보",
+                subtitle: "지도에서 위치를 선택하세요",
+                lat: "위도",
+                lng: "경도",
+                rain24h: "강수 확률 (24h)",
+                forecast_short: "단기 예보 (+3h)",
+                forecast_7d: "7일간의 일기 예보",
+                loading: "위성 데이터 수신 중...",
+                error: "데이터를 가져올 수 없습니다",
+                click_prompt: "지도를 클릭하세요",
+                max_rain_prob: "최대 강수 확률",
+                temp_range: "기온 범위"
+            },
+            fr: {
+                title: "Météo Mondiale",
+                subtitle: "Cliquez sur la carte",
+                lat: "LAT",
+                lng: "LON",
+                rain24h: "Risque Pluie (24h)",
+                forecast_short: "Court Terme (+3h)",
+                forecast_7d: "Prévisions 7 Jours",
+                loading: "Chargement des données...",
+                error: "Données indisponibles",
+                click_prompt: "Cliquez sur la carte",
+                max_rain_prob: "Prob. Précip. Max",
+                temp_range: "Plage Temp."
+            },
+            it: {
+                title: "Meteo Globale",
+                subtitle: "Clicca sulla mappa",
+                lat: "LAT",
+                lng: "LON",
+                rain24h: "Prob. Pioggia (24h)",
+                forecast_short: "Breve Termine (+3h)",
+                forecast_7d: "Previsioni 7 Giorni",
+                loading: "Caricamento dati...",
+                error: "Dati non disponibili",
+                click_prompt: "Clicca sulla mappa",
+                max_rain_prob: "Prob. Precip. Max",
+                temp_range: "Intervallo Temp."
+            },
+            de: {
+                title: "Weltwetter",
+                subtitle: "Klicken Sie auf die Karte",
+                lat: "BREITE",
+                lng: "LÄNGE",
+                rain24h: "Regenwahrsch. (24h)",
+                forecast_short: "Kurzfristig (+3h)",
+                forecast_7d: "7-Tage-Wettervorhersage",
+                loading: "Lade Satellitendaten...",
+                error: "Daten nicht verfügbar",
+                click_prompt: "Karte anklicken",
+                max_rain_prob: "Max. Niederschlag",
+                temp_range: "Temperatur"
+            }
+        };
+
+        // WMO Weather Codes Translation
+        const WMO_CODES = {
+            0:  { icon: 'fa-sun', color: 'text-yellow-400', zh: '晴朗', en: 'Clear', ja: '快晴', ko: '맑음', fr: 'Ensoleillé', it: 'Sereno', de: 'Klar' },
+            1:  { icon: 'fa-cloud-sun', color: 'text-yellow-300', zh: '少云', en: 'Mainly Clear', ja: '晴れ', ko: '대체로 맑음', fr: 'Peu Nuageux', it: 'Poco Nuvoloso', de: 'Meist Klar' },
+            2:  { icon: 'fa-cloud', color: 'text-gray-400', zh: '多云', en: 'Partly Cloudy', ja: '曇り', ko: '구름 많음', fr: 'Partiellement Nuageux', it: 'Parz. Nuvoloso', de: 'Teils Wolkig' },
+            3:  { icon: 'fa-cloud', color: 'text-gray-500', zh: '阴天', en: 'Overcast', ja: '曇天', ko: '흐림', fr: 'Couvert', it: 'Coperto', de: 'Bedeckt' },
+            45: { icon: 'fa-smog', color: 'text-gray-400', zh: '雾', en: 'Fog', ja: '霧', ko: '안개', fr: 'Brouillard', it: 'Nebbia', de: 'Nebel' },
+            48: { icon: 'fa-smog', color: 'text-gray-400', zh: '雾凇', en: 'Rime Fog', ja: '霧氷', ko: '상고대', fr: 'Brouillard Givrant', it: 'Nebbia Che Gela', de: 'Raureifnebel' },
+            51: { icon: 'fa-cloud-rain', color: 'text-blue-300', zh: '毛毛雨', en: 'Light Drizzle', ja: '霧雨', ko: '이슬비', fr: 'Bruine Légère', it: 'Pioggerella', de: 'Leichter Sprühregen' },
+            53: { icon: 'fa-cloud-rain', color: 'text-blue-400', zh: '小雨', en: 'Drizzle', ja: '小雨', ko: '가벼운 비', fr: 'Bruine', it: 'Pioviggine', de: 'Sprühregen' },
+            55: { icon: 'fa-cloud-rain', color: 'text-blue-500', zh: '中雨', en: 'Heavy Drizzle', ja: '本降り', ko: '비', fr: 'Bruine Forte', it: 'Pioviggine Forte', de: 'Starker Sprühregen' },
+            61: { icon: 'fa-cloud-showers-heavy', color: 'text-blue-400', zh: '阵雨', en: 'Slight Rain', ja: '小雨', ko: '약한 비', fr: 'Pluie Légère', it: 'Pioggia Leggera', de: 'Leichter Regen' },
+            63: { icon: 'fa-cloud-showers-heavy', color: 'text-blue-500', zh: '大雨', en: 'Rain', ja: '雨', ko: '비', fr: 'Pluie', it: 'Pioggia', de: 'Regen' },
+            65: { icon: 'fa-cloud-showers-heavy', color: 'text-blue-600', zh: '暴雨', en: 'Heavy Rain', ja: '大雨', ko: '강한 비', fr: 'Pluie Forte', it: 'Pioggia Forte', de: 'Starker Regen' },
+            71: { icon: 'fa-snowflake', color: 'text-white', zh: '小雪', en: 'Slight Snow', ja: '小雪', ko: '약한 눈', fr: 'Neige Légère', it: 'Neve Leggera', de: 'Leichter Schnee' },
+            73: { icon: 'fa-snowflake', color: 'text-white', zh: '中雪', en: 'Snow', ja: '雪', ko: '눈', fr: 'Neige', it: 'Neve', de: 'Schnee' },
+            75: { icon: 'fa-snowflake', color: 'text-white', zh: '大雪', en: 'Heavy Snow', ja: '大雪', ko: '강한 눈', fr: 'Neige Forte', it: 'Neve Forte', de: 'Starker Schnee' },
+            95: { icon: 'fa-bolt', color: 'text-yellow-500', zh: '雷暴', en: 'Thunderstorm', ja: '雷雨', ko: '뇌우', fr: 'Orage', it: 'Temporale', de: 'Gewitter' },
+        };
+
+        function App() {
+            const mapContainerRef = useRef(null);
+            const mapInstanceRef = useRef(null);
+            const markerRef = useRef(null);
+            
+            const [selectedLocation, setSelectedLocation] = useState(null);
+            const [weatherData, setWeatherData] = useState(null);
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [lang, setLang] = useState('en'); // Changed default to English
+
+            const t = TRANSLATIONS[lang];
+
+            // Initialize Map
+            useEffect(() => {
+                if (mapInstanceRef.current) return;
+                if (!mapContainerRef.current) return;
+
+                const map = L.map(mapContainerRef.current, {
+                    zoomControl: false,
+                    attributionControl: false,
+                    minZoom: 2,
+                    worldCopyJump: true
+                }).setView([20, 0], 2);
+
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    className: 'dark-mode-tiles',
+                    attribution: '&copy; OpenStreetMap'
+                }).addTo(map);
+
+                L.control.zoom({ position: 'topright' }).addTo(map);
+
+                map.on('click', (e) => {
+                    const { lat, lng } = e.latlng;
+                    const normalizedLng = ((lng + 180) % 360 + 360) % 360 - 180;
+                    handleMapClick(lat, normalizedLng);
+                });
+
+                mapInstanceRef.current = map;
+                
+                setTimeout(() => map.invalidateSize(), 100);
+
+                return () => {
+                    if (mapInstanceRef.current) {
+                        mapInstanceRef.current.remove();
+                        mapInstanceRef.current = null;
+                    }
+                };
+            }, []);
+
+            const handleMapClick = async (lat, lng) => {
+                const map = mapInstanceRef.current;
+                if (!map) return;
+
+                if (markerRef.current) {
+                    markerRef.current.setLatLng([lat, lng]);
+                } else {
+                    const customIcon = L.divIcon({
+                        className: 'custom-div-icon',
+                        html: `<div class="marker-pin"></div>`,
+                        iconSize: [20, 20],
+                        iconAnchor: [10, 10]
+                    });
+                    markerRef.current = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+                }
+
+                map.flyTo([lat, lng], map.getZoom() > 5 ? map.getZoom() : 5, { duration: 1.5 });
+
+                setSelectedLocation({ lat, lng });
+                setWeatherData(null);
+                setLoading(true);
+                setError(null);
+
+                try {
+                    // Fetch Current + Hourly (for 24h) + Daily (for 7 days)
+                    // forecast_days=8 to include today + next 7 days
+                    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,weather_code&hourly=temperature_2m,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=8`;
+                    
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error("API Error");
+                    
+                    const data = await response.json();
+                    setWeatherData(data);
+                } catch (err) {
+                    console.error(err);
+                    setError(t.error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Helper to get weather info
+            const getWeatherInfo = (code) => {
+                const info = WMO_CODES[code] || WMO_CODES[0];
+                return { 
+                    ...info, 
+                    label: info[lang] || info['en'] 
+                };
+            };
+
+            const getRainChance24h = (hourlyData) => {
+                if (!hourlyData) return 0;
+                // Get next 24 hours approximately
+                const next24h = hourlyData.precipitation_probability.slice(0, 24);
+                return Math.max(...next24h);
+            };
+
+            // Get Date Label (Mon, Tue, etc.) based on language
+            const getDayLabel = (dateStr) => {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString(lang, { weekday: 'short' });
+            };
+
+            return (
+                <div className="relative w-full h-full font-sans text-slate-200 overflow-hidden">
+                    {/* Map Background */}
+                    <div ref={mapContainerRef} className="absolute inset-0 z-0 bg-black w-full h-full" />
+
+                    {/* Language Selector (Top Right) */}
+                    <div className="absolute top-4 right-14 z-50">
+                        <div className="glass-panel rounded-lg px-2 py-1 flex items-center gap-2">
+                            <i className="fa-solid fa-language text-sky-400"></i>
+                            <select 
+                                value={lang} 
+                                onChange={(e) => setLang(e.target.value)}
+                                className="bg-transparent border-none outline-none text-xs text-slate-200 cursor-pointer appearance-none pr-4"
+                            >
+                                {Object.entries(LANGUAGES).map(([code, name]) => (
+                                    <option key={code} value={code}>{name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Main Sidebar */}
+                    <div className="absolute top-4 left-4 z-50 w-80 max-h-[95vh] flex flex-col gap-3 pointer-events-none">
+                        
+                        {/* Header */}
+                        <div className="glass-panel p-5 rounded-xl pointer-events-auto">
+                            <h1 className="text-xl font-bold text-sky-400 flex items-center gap-2 neon-text">
+                                <i className="fa-solid fa-earth-americas"></i> {t.title}
+                            </h1>
+                            <p className="text-xs text-slate-400 mt-1">{t.subtitle}</p>
+                        </div>
+
+                        {/* Content */}
+                        {(selectedLocation || loading) && (
+                            <div className="glass-panel rounded-xl animate-fade-in pointer-events-auto overflow-hidden flex flex-col max-h-[calc(90vh-100px)]">
+                                {loading ? (
+                                    <div className="flex flex-col items-center justify-center py-12">
+                                        <i className="fa-solid fa-circle-notch fa-spin text-3xl text-sky-400 mb-3"></i>
+                                        <span className="text-sm text-sky-200">{t.loading}</span>
+                                    </div>
+                                ) : error ? (
+                                    <div className="text-red-400 text-sm text-center py-6 px-4">
+                                        <i className="fa-solid fa-triangle-exclamation mb-2 text-xl"></i>
+                                        <p>{error}</p>
+                                    </div>
+                                ) : weatherData ? (
+                                    <div className="overflow-y-auto custom-scrollbar p-5 space-y-6">
+                                        
+                                        {/* 1. Location & Current Temp */}
+                                        <div>
+                                            <div className="flex justify-between items-end border-b border-slate-700/50 pb-2 mb-4">
+                                                <div>
+                                                    <div className="text-[10px] text-slate-400 uppercase tracking-wider">{t.lat}</div>
+                                                    <div className="font-mono text-sky-300">{selectedLocation.lat.toFixed(4)}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-[10px] text-slate-400 uppercase tracking-wider">{t.lng}</div>
+                                                    <div className="font-mono text-sky-300">{selectedLocation.lng.toFixed(4)}</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="text-center">
+                                                <div className={`text-6xl mb-2 ${getWeatherInfo(weatherData.current.weather_code).color} filter drop-shadow-lg`}>
+                                                    <i className={`fa-solid ${getWeatherInfo(weatherData.current.weather_code).icon}`}></i>
+                                                </div>
+                                                <div className="text-5xl font-light text-white mb-2">
+                                                    {weatherData.current.temperature_2m}<span className="text-2xl align-top text-sky-200">°C</span>
+                                                </div>
+                                                <div className="inline-block px-4 py-1 rounded-full bg-slate-800/80 border border-slate-600/50 text-sm text-sky-100">
+                                                    {getWeatherInfo(weatherData.current.weather_code).label}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* 2. 24h Rain Probability */}
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-2">
+                                                <span className="text-slate-400"><i className="fa-solid fa-umbrella text-indigo-400 mr-1"></i> {t.rain24h}</span>
+                                                <span className="text-indigo-300 font-bold">{getRainChance24h(weatherData.hourly)}%</span>
+                                            </div>
+                                            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
+                                                <div 
+                                                    className="bg-gradient-to-r from-indigo-500 to-sky-400 h-2 rounded-full transition-all duration-1000" 
+                                                    style={{ width: `${getRainChance24h(weatherData.hourly)}%` }}
+                                                ></div>
+                                            </div>
+                                        </div>
+
+                                        {/* 3. Short Term (+3h) */}
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-2">{t.forecast_short}</div>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                {[1, 2, 3].map((offset) => {
+                                                    const hourData = weatherData.hourly;
+                                                    // Simple offset logic
+                                                    const currentHour = new Date().getHours();
+                                                    const idx = currentHour + offset;
+                                                    if (idx >= hourData.temperature_2m.length) return null;
+                                                    
+                                                    return (
+                                                        <div key={offset} className="bg-slate-800/40 rounded p-2 text-center border border-slate-700/50">
+                                                            <div className="text-[10px] text-slate-500">+{offset}h</div>
+                                                            <div className="text-sm font-bold text-slate-200">{hourData.temperature_2m[idx]}°</div>
+                                                            <div className="text-[10px] text-sky-400 mt-1">
+                                                                <i className="fa-solid fa-droplet text-[8px]"></i> {hourData.precipitation_probability[idx]}%
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        {/* 4. 7-Day Forecast */}
+                                        <div>
+                                            <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                                <i className="fa-regular fa-calendar"></i> {t.forecast_7d}
+                                            </div>
+                                            <div className="space-y-2">
+                                                {weatherData.daily.time.map((dateStr, index) => {
+                                                    // Skip today (index 0) if you want, or keep it. Let's keep it but mark "Today" if possible.
+                                                    // Actually Open-Meteo returns today as index 0.
+                                                    if (index > 7) return null; // Ensure only up to 7 days
+                                                    
+                                                    const code = weatherData.daily.weather_code[index];
+                                                    const maxTemp = weatherData.daily.temperature_2m_max[index];
+                                                    const minTemp = weatherData.daily.temperature_2m_min[index];
+                                                    const rainProb = weatherData.daily.precipitation_probability_max[index];
+                                                    const info = getWeatherInfo(code);
+
+                                                    return (
+                                                        <div key={dateStr} className="flex items-center justify-between bg-slate-800/30 p-2 rounded border border-slate-700/30 hover:bg-slate-800/60 transition-colors">
+                                                            <div className="w-10 text-xs text-slate-400 font-medium">
+                                                                {index === 0 ? (lang === 'zh' ? '今天' : 'Today') : getDayLabel(dateStr)}
+                                                            </div>
+                                                            <div className={`w-8 text-center text-sm ${info.color}`}>
+                                                                <i className={`fa-solid ${info.icon}`}></i>
+                                                            </div>
+                                                            <div className="flex-1 flex justify-center gap-2 text-xs">
+                                                                <span className="text-sky-200">{maxTemp}°</span>
+                                                                <span className="text-slate-500">/</span>
+                                                                <span className="text-slate-400">{minTemp}°</span>
+                                                            </div>
+                                                            <div className="w-10 text-right text-xs text-indigo-300 font-mono">
+                                                                {rainProb}%
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                ) : (
+                                    <div className="text-center text-slate-500 py-12 flex flex-col items-center">
+                                        <div className="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4 animate-pulse">
+                                            <i className="fa-regular fa-hand-pointer text-2xl opacity-50"></i>
+                                        </div>
+                                        <p>{t.click_prompt}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Floating Footer */}
+                    <div className="absolute bottom-4 right-4 z-50 text-[10px] text-slate-600 bg-black/80 px-3 py-1 rounded pointer-events-none backdrop-blur-sm border border-slate-800">
+                        Data by Open-Meteo | &copy; Yang Su, École Normale Supérieure - PSL
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
